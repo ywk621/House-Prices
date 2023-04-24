@@ -1,0 +1,694 @@
+---
+title: "Final Kaggle Notebook - House Price Prediction"
+author: "WinKi Yu, Jim Jeonggeun Kim, Devin Bastian, Dara Dien"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    theme: journal
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Load Packages
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(caret)
+library(scales)
+library(corrplot)
+```
+
+*** 
+
+### 1.1 - Kaggle Project Introduction
+
+The project assignment in IS-6489 involves participating in a Kaggle competition. This particular competition, House Prices: Advanced Regression Techniques, is in the playground section, and is strictly for fun and fame, not profit. (Some official Kaggle competitions have substantial prize money at stake.) For more information, go to the competition site: www.kaggle.com/c/house-prices-advanced-regression-techniques.
+
+This competition has already concluded. You will still be able to submit your results and receive a score but the leaderboard will not update with your ranking.
+
+The competition consists in predicting house prices in Ames, IA. The data, described below, has already been split into 50% train and 50% test sets at the above website (with 1460 and 1459 observations, respectively). The test set contains all the predictor variables found in the train set, but is missing the target variable, SalePrice. You will use the model you develop on the train set to make predictions for the test set and then submit your predictions at Kaggle. Your predictions will be automatically evaluated on a validation data set. Your score will thus be based on the validation set performance of your model. The competition tests your ability to develop a generalizable model with low variance.
+
+***
+
+### 1.2 - Assignments
+
+For this project you will work both individually and in a group to create a model of housing prices. The main assignments include two compiled R Markdown notebooks:
+
+Final Kaggle Notebook
+
+A group assignment due at the end of the semester. (Students may choose to work individually.)
+Develop a linear model of housing prices using some or all of the available variables. In this case, there are no restrictions on variables, or on combinations of variables—interactions and polynomial terms are encouraged, as appropriate. Aim for maximum predictive accuracy.
+Model performance benchmark for minimum estimated out-of-sample R2 is .85. (This is the model’s estimated performance with new data, such as the test data.)
+Notebook should include the code you wrote for data cleaning and exploring, wrangling, modeling and cross-validation. (There should be some plots and tables.)
+Notebook should report (1) RMSE and R2 on the train set, (2) estimated RMSE and R2 on the test set (3), your Kaggle score (returned log RMSE) and rank.
+
+***
+
+### 1.3 - Steps & Goals
+
+1. Look around the Kaggle competition site. Familiarize yourself with the structure of the competition. Make sure you understand how to submit your predictions.
+
+2. Download the train data and begin exploratory data analysis. The data set is complex; make sure you understand how the variables relate to one another as well as the structure and meaning of the missing observations. (Many of the NAs have a specific meaning in the data set that can be discerned by reading the data dictionary at Kaggle closely.) Think about how you might combine variables or create new ones.
+
+3. After cleaning the data, develop a linear model of house prices using just 5 predictors, and submit your predictions to Kaggle. You should use a simple cross-validation method to ensure that your results will generalize well to new data. This work—and your Kaggle score— should be documented in a well-organized project notebook. This is an individual assignment due midway through the course.
+
+4. Students will then self-assemble into project groups no larger than 3-4 to work on the group project notebook. (As noted above, you are not obligated to work in a group.)
+
+5. Working in your group, develop a more complete linear model using as many variables as you’d like and submit your predictions to Kaggle. You should again use a simple cross-validation method to ensure that your results will generalize well to new data. Your process and results should be documented in a well-organized group notebook. This is a group assignment due at the end of the course.
+6. Review the contribution of your group members in the Project Group Evaluation assignment.
+
+Goal - It is your job to predict the sales price for each house. For each Id in the test set, you must predict the value of the SalePrice variable. 
+
+***
+
+### 1.4 - Data Fields Details
+
+The Data set to predict house prices using advanced regression techniques consists of 81 variables, including the target variable, SalePrice.  Details of the dataset can be found here at this website: [Kaggle - House Price Data Set](https://www.kaggle.com/competitions/house-prices-advanced-regression-techniques/data)
+
+***
+
+### 1.5 - Setup Training and Test Data
+
+```{r}
+# Load Data
+train <- read_csv("train.csv")
+test <- read_csv("test.csv")
+
+# View first 6 rows of data
+head(train)
+head(test)
+
+```
+
+***
+
+### 1.6 - Data Integrity Check
+
+In total, there are 34 predictors that contains missing values. Our approach is to review the potential meaning of the NAs and convert them into meaning values, for example, NAs in 'Alley' indicates that there is no alley at the property so value 'none' will be inserted. A minimal amount of NAs in a variable will not affect the training so NAs in those variables can be negligible i.e. 'Electrical'.  
+
+```{r}
+
+count_missings <- function(x) sum(is.na(x))
+
+train %>% 
+  summarize_all(count_missings) # Handy summarize_all function
+
+train <- train %>% # Save the result back into the original data
+  mutate(LotFrontage = replace_na(LotFrontage, median(LotFrontage, na.rm = T)), # Need to set na.rm = T
+         Alley = replace_na(data = Alley, replace = "NA"),
+         MasVnrType = replace_na(MasVnrType, "None"),
+         MasVnrArea = replace_na(MasVnrArea, 0), # Overwrite the existing column with new values
+         BsmtQual = replace_na(BsmtQual, "NA"),
+         BsmtCond = replace_na(BsmtCond, "NA"),
+         BsmtExposure = replace_na(BsmtExposure, "NA"),
+         BsmtFinType1 = replace_na(BsmtFinType1, "NA"),
+         BsmtFinType2 = replace_na(BsmtFinType2, "NA"),
+         FireplaceQu = replace_na(FireplaceQu, "NA"),
+         GarageType = replace_na(GarageType, "NA"),
+         GarageYrBlt = replace_na(GarageYrBlt, 0),
+         GarageFinish = replace_na(GarageFinish, "NA"),
+         GarageQual = replace_na(GarageQual, "NA"),
+         GarageCond = replace_na(GarageCond, "NA"),
+         PoolQC = replace_na(PoolQC, "NA"),
+         Fence = replace_na(Fence, "NA"),
+         MiscFeature = replace_na(MiscFeature, "NA")) 
+
+# Check that it worked
+train %>% 
+  summarize_all(count_missings)
+
+```
+
+> Converting the below characters into factors for the model to work, except 'CentralAir'. This variable is converted into numeric since the model gives a higher R2 when 'CentralAir' is a numeric variable instead of a factor.
+```{r}
+
+train <- train %>%
+  mutate(CentralAir = factor(CentralAir),
+         CentralAir = as.numeric(CentralAir),
+        BldgType = factor(BldgType),
+        Neighborhood = factor(Neighborhood),
+        RoofMatl = factor(RoofMatl),
+        SaleCondition = factor(SaleCondition))
+
+# Check the levels
+summary(train)
+
+```
+
+***
+
+### 1.7 - Feature Engineering & Creating New Variables
+
+```{r}
+summary(train$SalePrice)
+
+# Histogram of SalePrice
+ggplot(train, aes(SalePrice)) +
+  geom_histogram(col = 'white') + 
+  scale_x_continuous(labels = comma) # Right-skewed
+
+```
+
+>The above histogram indicates that SalePrice is right skewed. This will pose a challenge in building the model. Hence, SalePrice is logged as the following:
+
+```{r}
+# Histogram of log SalePrice
+ggplot(train, aes(log(SalePrice))) + 
+  geom_histogram(col = 'white') + 
+  scale_x_continuous(labels = comma) # Normally distributed after logged
+
+# Log Term of SalePrice
+train$SalePrice <- log(train$SalePrice)
+```
+
+
+```{r}
+options(scipen= 5)
+
+lm(SalePrice ~ . -Id, data = train) %>% summary()
+
+```
+
+>It is challenging to find any correlations among variables using linear regression. Let's try it another way using Correlation heatmap -- a great virtual tool to help summarize the correlation among numeric parameters.
+
+```{r}
+numeric_cols <- train %>% select_if(is.numeric)
+
+correlation <- cor(numeric_cols)
+
+sale_price_col <- as.matrix(abs(correlation[,'SalePrice']))
+ordered_matrix <- sale_price_col[order(sale_price_col, decreasing = TRUE),]
+
+names <- ordered_matrix[ordered_matrix > 0.35, drop = FALSE]
+names <- rownames(as.matrix(names[!is.na(names)]))
+
+cor_matrix <- correlation[names, names]
+#sorted_matrix <- filtered_cor_matrix[order(filtered_cor_matrix[,'SalePrice'], decreasing = TRUE),]
+
+corrplot.mixed(cor_matrix, tl.col="black", tl.pos = "lt",tl.cex = 0.7)
+```
+
+>There are a few pairs of highly correlated variables, for instance, GarageArea and GarageCars, TotalBsmtSF and 1stFlorSF, as well as GrLivArea and TotRomsAbvGrd. Out of all numeric variables, OverallQual has shown to have the highest correlation with SalePrice. There is no doubt that it will very likely be included as one of the predictors so let's check it out by plotting it. 
+
+```{r}
+# Histogram
+ggplot(train, aes(OverallQual)) +
+  geom_histogram() +
+  labs(title = "SalePrice ~ OverallQual, with local regression") # Normal 
+
+# Scatter
+ggplot(train, aes(OverallQual, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F, color = "blue") +
+  labs(title = "SalePrice ~ OverallQual, with local regression") # Linear
+
+```
+
+### 1.8 - Creating New Variables. 
+We have generated new variables by merging those who share a similar feature and created visual plots for observation purposes, such as TotalBsmtSF, GrLivArea, and GarageArea. The three features describe the square footage of the basement, above ground living area and garage area. The combination of three can well describe the total square footage of the property.
+```{r}
+# home price against Neighborhood
+train %>% 
+  ggplot(aes(x=reorder(Neighborhood, -SalePrice, na.rm = TRUE), y=SalePrice)) +
+  geom_boxplot() +
+  labs(title = "price ~ Neighborhood")
+
+lm(SalePrice ~ OverallQual * Neighborhood, data = train) %>% summary() # .77
+```
+
+
+```{r}
+
+# Interaction
+ggplot(train, aes(OverallQual, SalePrice, color = Neighborhood)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F, color = "blue") +
+  labs(title = "SalePrice ~ OverallQual, with local regression") 
+
+lm(SalePrice ~ OverallQual * Neighborhood, data = train) %>% summary() # num .77 ft .762
+
+```
+
+```{r}
+
+# Histogram of TotalBsmtSF
+ggplot(train, aes(TotalBsmtSF)) + 
+  geom_histogram(col = 'white') # Normal distribution
+
+# Histogram of `GrLivArea`
+ggplot(train, aes(`GrLivArea`)) + 
+  geom_histogram(col = 'white') # left-skewed distribution
+
+
+# Histogram of `GarageArea`
+ggplot(train, aes(`GarageArea`)) + 
+  geom_histogram(col = 'white') # Normal distribution
+
+train <- train %>%
+  mutate(TotalSF = TotalBsmtSF + GrLivArea + GarageArea)
+
+# Histogram of TotalSF
+ggplot(train, aes(TotalSF)) + 
+  geom_histogram(col = 'white') # Normal distribution
+
+# Plot home price against home size
+train %>%
+  ggplot(aes(TotalSF, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F, color = "blue") +
+  labs(title = "SalePrice ~ Home size, with local regression") 
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF, data = train) %>% summary() # ft num .842
+
+# Plot home price against home size -- logged
+train %>%
+  ggplot(aes(log(TotalSF), SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F, color = "blue") +
+  labs(title = "SalePrice ~ Home size, with local regression") 
+
+lm(SalePrice ~ OverallQual * Neighborhood + log(TotalSF), data = train) %>% summary() # ft num .855
+
+
+```
+
+
+```{r}
+
+# Histogram of FullBath
+ggplot(train, aes(FullBath)) + 
+  geom_histogram(col = 'white') 
+
+# Histogram of HalfBath
+ggplot(train, aes(HalfBath)) + 
+  geom_histogram(col = 'white') 
+
+# Histogram of BsmtFullBath
+ggplot(train, aes(BsmtFullBath)) + 
+  geom_histogram(col = 'white') 
+
+# Histogram of BsmtHalfBath
+ggplot(train, aes(BsmtHalfBath)) + 
+  geom_histogram(col = 'white') 
+
+train <- train %>%
+  mutate(TotalBath = FullBath + HalfBath + BsmtFullBath + BsmtHalfBath)
+
+# Histogram of TotalBath
+ggplot(train, aes(TotalBath)) + 
+  geom_histogram(col = 'white') # Normal distribution; missing left end tail
+
+# Histogram of TotalBath -- logged
+ggplot(train, aes(log(TotalBath))) + 
+  geom_histogram(col = 'white') # worse
+
+# Plot home price against total bath
+train %>% 
+  ggplot(aes(TotalBath, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ total bath")
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + TotalBath, data = train) %>% summary() # ft num .854
+
+# Plot home price against total bath -- logged
+train %>% 
+  ggplot(aes(log(TotalBath), SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ total bath") 
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + log(TotalBath), data = train) %>% summary() # ft num .855
+
+```
+
+```{r}
+
+# Histogram of OpenPorchSF
+ggplot(train, aes(OpenPorchSF)) + 
+  geom_histogram(col = 'white') 
+
+
+# Histogram of 3SsnPorch
+ggplot(train, aes(`3SsnPorch`)) + 
+  geom_histogram(col = 'white') 
+
+
+# Histogram of EnclosedPorch
+ggplot(train, aes(EnclosedPorch)) + 
+  geom_histogram(col = 'white') 
+
+# Histogram of ScreenPorch
+ggplot(train, aes(ScreenPorch)) + 
+  geom_histogram(col = 'white') 
+
+# Histogram of WoodDeckSF
+ggplot(train, aes(WoodDeckSF)) + 
+  geom_histogram(col = 'white')
+
+train <- train %>%
+  mutate(TotalPorchSF = OpenPorchSF + `3SsnPorch` + EnclosedPorch + ScreenPorch + WoodDeckSF)
+
+# Histogram of TotalPorchSF
+ggplot(train, aes(TotalPorchSF)) + 
+  geom_histogram(col = 'white') 
+
+# Plot home price against total porch
+train %>% 
+  ggplot(aes(TotalPorchSF, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ total porch")
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + TotalBath + TotalPorchSF, data = train) %>% summary() # ft .859
+
+# Plot home price against total porch -- logged
+train %>% 
+  ggplot(aes(log(TotalPorchSF), SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ total porch") # inf values!
+
+# Interaction
+train %>% 
+  ggplot(aes(TotalPorchSF, SalePrice, color = Neighborhood)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ total porch") # not exist
+
+```
+
+>We first review the spread of a variable by plotting a histogram or a bar chart. Then we examinate the correlation between the predictor and the target variable by plotting a scatterplot or a boxplot before building a linear regression model.
+```{r}
+train %>%
+  group_by(YearBuilt) %>%
+  summarize(n = n())
+
+# continuous
+# Histogram of YearBuilt
+ggplot(train, aes(YearBuilt)) + 
+  geom_histogram(col = 'white')
+
+# Plot home price against YearBuilt
+train %>% 
+  ggplot(aes(YearBuilt, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ YearBuilt") # linear
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF, data = train) %>% summary() # num .87
+
+# Plot home price against YearBuilt -- logged
+train %>% 
+  ggplot(aes(log(YearBuilt), SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ YearBuilt")
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + log(YearBuilt) + TotalBath + CentralAir + TotalPorchSF, data = train) %>% summary() # num .87
+
+
+```
+
+```{r}
+# Histogram of CentralAir
+ggplot(train, aes(CentralAir)) + 
+  geom_histogram(col = 'white')
+
+# Plot home price against CentralAir
+train %>% 
+  ggplot(aes(CentralAir, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ CentralAir") # normal
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir, data = train) %>% summary() # num .8655
+
+# Plot home price against CentralAir -- logged
+train %>% 
+  ggplot(aes(log(CentralAir), SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ CentralAir") # not needed
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + log(CentralAir), data = train) %>% summary() # num .8655
+```
+
+
+```{r}
+# factor
+# Histogram of BldgType
+ggplot(train, aes(BldgType)) + 
+  geom_bar(col = 'white')
+
+train %>%
+  group_by(BldgType) %>%
+  summarize(n = n())
+
+# Plot home price against BldgType
+train %>% 
+  ggplot(aes(BldgType, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ BldgType") 
+
+train %>% 
+  ggplot(aes(BldgType, SalePrice)) +
+  geom_boxplot() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ BldgType") 
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType, data = train) %>% summary() # cat .8742
+
+
+# grouping according to the median
+train <- train %>%
+  mutate(BldgType_n = case_when(BldgType %in% c("1Fam", "TwnhsE") ~ "1",
+                                TRUE ~ "2"))
+
+train %>%
+  group_by(BldgType_n) %>%
+  summarize(n = n()) 
+
+summary(train$BldgType_n)
+
+# Histogram of BldgType_n
+ggplot(train, aes(BldgType_n)) + 
+  geom_bar(col = 'white')
+
+# Plot home price against BldgType_n
+train %>% 
+  ggplot(aes(BldgType_n, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ BldgType_n") 
+
+train %>% 
+  ggplot(aes(BldgType_n, SalePrice)) +
+  geom_boxplot() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ BldgType_n") 
+
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType_n, data = train) %>% summary() # .8709
+
+```
+
+
+```{r}
+# factor
+# Histogram of RoofMatl
+ggplot(train, aes(RoofMatl)) + 
+  geom_bar(col = 'white')
+
+train %>%
+  group_by(RoofMatl) %>%
+  summarize(n = n())
+
+# Plot home price against RoofMatl
+train %>% 
+  ggplot(aes(RoofMatl, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ RoofMatl") 
+
+train %>% 
+  ggplot(aes(RoofMatl, SalePrice)) +
+  geom_boxplot() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ RoofMatl") 
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType + RoofMatl, data = train) %>% summary() # fac .8878
+
+```
+
+```{r}
+# factor
+# Histogram of SaleCondition
+ggplot(train, aes(SaleCondition)) + 
+  geom_bar(col = 'white')
+
+train %>%
+  group_by(SaleCondition) %>%
+  summarize(n = n())
+
+# Plot home price against SaleCondition
+train %>% 
+  ggplot(aes(SaleCondition, SalePrice)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ SaleCondition") 
+
+train %>% 
+  ggplot(aes(SaleCondition, SalePrice)) +
+  geom_boxplot() +
+  geom_smooth(method = "lm", se = F) +
+  labs(title = "price ~ SaleCondition") 
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType + RoofMatl + SaleCondition, data = train) %>% summary() # fac .8921
+
+```
+### 1.9 - Chosen Variables & Data Modeling
+After observation, we have grouped together the most correlated variables and conducted tests as shown below.
+
+**SalePrice(Target Variable)**: Sales value of home  
+**TotRmsAbvGrd**: Total rooms above grade (does not include bathrooms)   
+**GarageArea**: Size of garage in square feet  
+**GrLivArea**: Above grade (ground) living area square feet  
+**FullBath**: Full bathrooms above grade   
+**HalfBath**:  Half baths above grade  
+**BsmtFullBath**: Basement full bathrooms  
+**BsmtHalfBath**: Basement half bathrooms  
+**OverallQual**: Overall material and finish quality   
+**CentralAir**: Central air conditioning   
+**OpenPorchSF**: Open porch area in square feet  
+**3SsnPorch**: Three season porch area in square feet  
+**EnclosedPorch**: Enclosed porch area in square feet  
+**ScreenPorch**: Screen porch area in square feet  
+**WoodDeckSF**: Wood deck area in square feet  
+**BldgType**: Type of dwelling   
+**Neighborhood**: Physical locations within Ames city limits    
+**SaleCondition**: Condition of sale   
+
+```{r}
+
+lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType + RoofMatl + SaleCondition, data = train) %>% summary()  # .89
+
+```
+
+***
+
+### 2.0 - Cross Validation
+Cross Validation Cross-validation is a technique used to prevent overfitting by assessing the model's performance on new data. The validation set method is the simplest form of CV, and it is integrated into Kaggle's structure. In this method, a validation set is reserved for model evaluation. However, to predict the model's performance on Kaggle, we need to create a training and validation set using the train set.To do this, we follow the following steps:Divide the train set into two folds, namely, the train fold and validation fold, with a common split ratio of 70:30. Train the model on the train fold and assess its performance on the validation fold. The RMSE and R-squared of the model on the validation fold will give us an estimate of its out-of-sample performance.
+```{r}
+# Randomly sample 70% of the rows
+set.seed(124)
+index <- sample(x = 1:nrow(train), size = nrow(train)*.7, replace = F)
+
+head(index) # These are row numbers
+
+# Subset train using the index to create train_fold
+train_fold <- train[index, ]
+
+# Subset the remaining row to create validation fold.
+validation_fold <- train[-index, ]
+
+# Fit model
+model <- lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType + RoofMatl + SaleCondition, data = train) 
+
+# Get predictions for the validation fold
+predictions <- predict(model, newdata = validation_fold)
+
+# Create functions for calculating RMSE and R-squared
+rmse <- function(observed, predicted) sqrt(mean((observed - predicted)^2))
+
+R2 <- function(observed, predicted){
+  TSS <- sum((observed - mean(observed))^2)
+  RSS <- sum((observed - predicted)^2)
+  1- RSS/TSS
+}
+
+rmse(validation_fold$SalePrice, predictions)
+R2(validation_fold$SalePrice, predictions)
+
+
+```
+
+***
+
+
+
+
+### 2.1 - Submit to Kaggle
+
+1. Fit the model using the entire train set.
+2. Make exactly the same changes to the test set that you made to the train set.
+3. Check there are no missing observations for your selected predictors in the test set.
+4. Make predictions for the test set.
+5. Format your submission file.
+6. Submit to Kaggle.
+
+
+```{r}
+# 1. Fit model to the entire train set.
+submission_model <- lm(SalePrice ~ OverallQual * Neighborhood + TotalSF + YearBuilt + TotalBath + CentralAir + TotalPorchSF + BldgType + RoofMatl + SaleCondition, data = train) 
+
+```
+
+```{r}
+# 2. Make exactly the same changes to the test set that you made to the train set.
+test <- test %>% 
+  mutate(TotalSF = TotalBsmtSF + GrLivArea + GarageArea,
+        TotalSF = replace_na(TotalSF, 0),
+        TotalBath = FullBath + HalfBath + BsmtFullBath + BsmtHalfBath,
+        TotalBath = replace_na(TotalBath, 0),
+        TotalPorchSF = OpenPorchSF + `3SsnPorch` + EnclosedPorch + ScreenPorch + WoodDeckSF,
+        CentralAir = factor(CentralAir),
+        CentralAir = as.numeric(CentralAir),
+        BldgType = factor(BldgType),
+        Neighborhood = factor(Neighborhood),
+        RoofMatl = factor(RoofMatl),
+        SaleCondition = factor(SaleCondition))
+         
+```
+
+
+```{r}
+# 3. Check there are no missing observations for your selected predictors in the test set.
+test %>% 
+  select(OverallQual, Neighborhood, TotalSF, YearBuilt, TotalBath, CentralAir, TotalPorchSF, RoofMatl, SaleCondition) %>% 
+  summarize_all(count_missings) 
+
+```
+
+```{r}
+# 4. Make predictions for the test set.
+submission_predictions <- predict(submission_model, newdata = test) # Use the newdata argument!
+
+head(submission_predictions)
+```
+
+```{r}
+# 5. Format your submission file.
+submission <- test %>% 
+  select(Id) %>% 
+  mutate(SalePrice = exp(submission_predictions))
+
+head(submission)
+```
+
+```{r}
+
+write.csv(submission, "submission.csv")
+
+```
+
+
+>This is our results for the project.
+(1) RMSE and R2 (>.75) on the train set: .152 & .855 
+(2) Estimated RMSE and R2 on the test set: .135 & .884
+(3) Kaggle score (returned log RMSE) and rank: 0.14767 & 2170
+
+
